@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prueba Login</title>
+</head>
+<body>
+  <h1>Prueba Login</h1>
+  <button id="btnLogin">Login (test@local)</button>
+  <button id="btnRefresh">Refresh (cookie)</button>
+  <pre id="out"></pre>
+
+  <script src="js/login-web.js"></script>
+  <script>
+    const out = document.getElementById('out');
+    document.getElementById('btnLogin').addEventListener('click', async () => {
+      const data = await loginWeb();
+      out.textContent = JSON.stringify(data, null, 2);
+    });
+    document.getElementById('btnRefresh').addEventListener('click', async () => {
+      const data = await refreshWeb();
+      out.textContent = JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>
+
