@@ -62,3 +62,16 @@ lib-merge/
 lib-ultimo/
 patch_backups/
 backup_asistencia_db.sql
+
+# Node / npm
+node_modules/
+package-lock.json
+
+# Backups y carpetas temporales
+lib-bakend/
+lib-desarrollo/
+lib-estable/
+lib-merge/
+lib-ultimo/
+patch_backups/
+backup_asistencia_db.sql
