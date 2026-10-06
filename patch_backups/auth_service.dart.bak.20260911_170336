@@ -1,4 +1,0 @@
-﻿/// Reexport para forzar uso de la implementación backend.
-/// Este archivo redirige todas las importaciones de
-/// 'lib/services/auth_service.dart' a 'lib/auth/auth_service.dart'.
-export '../auth/auth_service.dart';
