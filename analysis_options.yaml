@@ -18,6 +18,11 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    - lib-desarrollo/**
+    - lib-ultimo/**
+    - lib-estable/**
+    - lib-bakend/**
+    - lib-merge/**
 
 linter:
   # The lint rules applied to this project can be customized in the
