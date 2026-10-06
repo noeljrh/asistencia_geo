@@ -1,7 +1,7 @@
 // lib/screens/login.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 import '../services/queue_service.dart';
 import '../widgets/name_entry_dialog.dart';
 
@@ -140,3 +140,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+

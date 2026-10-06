@@ -1,7 +1,7 @@
 // lib/auth/auth_state.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 
 /// Adaptador ligero que expone la interfaz mínima que ApiClient y UI esperan.
 /// Delegará en AuthService.instance para obtener token, estado y notificar cambios.
@@ -34,3 +34,4 @@ class AuthState extends ChangeNotifier {
   Future<void> setUser({String? name, String? role}) => _service.setUser(name: name, role: role);
   Future<void> clear() => _service.clear();
 }
+

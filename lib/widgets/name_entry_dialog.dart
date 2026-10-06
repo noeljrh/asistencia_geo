@@ -1,7 +1,7 @@
 // lib/widgets/name_entry_dialog.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 
 class NameEntryDialog extends StatefulWidget {
   const NameEntryDialog({Key? key}) : super(key: key);
@@ -99,3 +99,4 @@ class _NameEntryDialogState extends State<NameEntryDialog> {
     );
   }
 }
+

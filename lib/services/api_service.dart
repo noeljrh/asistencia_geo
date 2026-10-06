@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 
 class ApiService {
   ApiService._();
@@ -245,3 +245,4 @@ class ApiService {
     return await sendLocation(payload, enqueueOnFail: false);
   }
 }
+

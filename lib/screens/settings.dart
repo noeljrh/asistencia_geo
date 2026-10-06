@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
-import '../services/auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 import '../services/api_service.dart';
 import '../main.dart'; // necesario para MyApp.of(context)
 
@@ -274,3 +274,4 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+

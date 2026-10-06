@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../services/api_service.dart';
 import '../services/queue_service.dart';
-import '../services/auth_service.dart';
+import 'package:asistencia_geo/services/auth_service.dart';
 import '../widgets/history_card.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -669,3 +669,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
