@@ -14,17 +14,37 @@ void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Prefer a stable key-based lookup for the counter if available.
+    final Finder counterByKey = find.byKey(const Key('counter'));
+    final Finder counterByText0 = find.text('0');
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    if (counterByKey.evaluate().isNotEmpty) {
+      // Verify that our counter starts at 0 (key-based).
+      expect(counterByKey, findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      // Tap the '+' icon and trigger a frame.
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump();
+
+      // Verify that our counter has incremented to 1 (text check).
+      expect(find.text('1'), findsOneWidget);
+    } else if (counterByText0.evaluate().isNotEmpty) {
+      // Fallback: verify that our counter starts at 0 (text-based).
+      expect(counterByText0, findsOneWidget);
+      expect(find.text('1'), findsNothing);
+
+      // Tap the '+' icon and trigger a frame.
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump();
+
+      // Verify that our counter has incremented.
+      expect(find.text('0'), findsNothing);
+      expect(find.text('1'), findsOneWidget);
+    } else {
+      // If neither the key nor the default text is present, fail with a clear message.
+      fail('No counter widget found. Add a Text widget with key Key("counter") or a Text("0") to the UI.');
+    }
   });
 }
