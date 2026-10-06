@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/queue_service.dart';
 import '../widgets/name_entry_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -53,7 +54,15 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final res = await AuthService.instance.login(username, password);
       if (res['success'] == true) {
-        // Guardado hecho por AuthService; navegar a home
+        // Guardado hecho por AuthService; reanudar items pendientes por token
+        try {
+          await QueueService.instance.resumePendingTokenItems();
+          debugPrint('[Login] resumePendingTokenItems called after successful login');
+        } catch (e) {
+          debugPrint('[Login] resumePendingTokenItems exception: $e');
+        }
+
+        // Navegar a home
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, '/home');
       } else {
@@ -131,4 +140,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

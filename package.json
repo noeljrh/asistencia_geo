@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.0.10",
+    "uuid": "^14.0.2"
+  }
+}

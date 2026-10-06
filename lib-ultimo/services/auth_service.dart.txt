@@ -1,0 +1,161 @@
+﻿// lib/services/auth_service.dart
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'api_service.dart';
+
+class AuthService {
+  static final AuthService instance = AuthService._internal();
+  AuthService._internal();
+
+  String? _token;
+  String? _refreshToken;
+  String _role = '';
+  String _userName = '';
+  bool _initialized = false;
+
+  Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+    await loadFromPrefs();
+    debugPrint('AuthService.init: isAuthenticated=${isAuthenticated}');
+  }
+
+  Future<void> loadFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _token = prefs.getString('auth_token');
+      _refreshToken = prefs.getString('refresh_token');
+      _userName = prefs.getString('user_name') ?? '';
+      _role = prefs.getString('user_role') ?? '';
+    } catch (e) {
+      debugPrint('AuthService.loadFromPrefs error: $e');
+      _token = null;
+      _refreshToken = null;
+      _userName = '';
+      _role = '';
+    }
+  }
+
+  Future<void> saveTokens(String accessToken, String refreshToken, {String? userName, String? role}) async {
+    _token = accessToken;
+    _refreshToken = refreshToken;
+    if (userName != null) _userName = userName;
+    if (role != null) _role = role;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', accessToken);
+    await prefs.setString('refresh_token', refreshToken);
+    if (userName != null) await prefs.setString('user_name', userName);
+    if (role != null) await prefs.setString('user_role', role);
+    debugPrint('AuthService.saveTokens saved token=${accessToken.isNotEmpty}');
+  }
+
+  String? get token => _token;
+  bool get isAuthenticated => _token != null && _token!.isNotEmpty;
+  String get role => _role;
+  String get userName => _userName;
+
+  Future<void> logout() async {
+    _token = null;
+    _refreshToken = null;
+    _userName = '';
+    _role = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('user_name');
+    await prefs.remove('user_role');
+    debugPrint('AuthService.logout: cleared credentials');
+  }
+
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    try {
+      final uri = Uri.parse('${ApiService.baseUrl}/auth/login');
+      final res = await http.post(uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'username': username, 'password': password}))
+        .timeout(const Duration(seconds: 12));
+
+      debugPrint('AuthService.login status=${res.statusCode} body=${res.body}');
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final body = res.body.isNotEmpty ? jsonDecode(res.body) : <String, dynamic>{};
+        final access = (body is Map && (body['access_token'] != null || body['token'] != null))
+            ? (body['access_token'] ?? body['token']) as String
+            : null;
+        final refresh = (body is Map && (body['refresh_token'] != null || body['refresh'] != null))
+            ? (body['refresh_token'] ?? body['refresh']) as String
+            : '';
+        final name = (body is Map && (body['user_name'] != null || body['username'] != null))
+            ? (body['user_name'] ?? body['username']) as String
+            : username;
+
+        if (access != null && access.isNotEmpty) {
+          await saveTokens(access, refresh, userName: name);
+          _token = access;
+          _refreshToken = refresh;
+          _userName = name;
+          return {'success': true, 'message': 'Login exitoso', 'access_token': access};
+        } else {
+          return {'success': false, 'message': 'Respuesta inválida', 'body': body};
+        }
+      } else {
+        String msg = 'Error ${res.statusCode}';
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map && body['error'] != null) msg = body['error'].toString();
+        } catch (_) {}
+        return {'success': false, 'message': msg, 'statusCode': res.statusCode};
+      }
+    } catch (e) {
+      debugPrint('AuthService.login exception: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<bool> refreshToken() async {
+    if (_refreshToken == null || _refreshToken!.isEmpty) {
+      debugPrint('AuthService.refreshToken: no refresh token disponible');
+      return false;
+    }
+    try {
+      final uri = Uri.parse('${ApiService.baseUrl}/auth/refresh');
+      final res = await http.post(uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'refresh_token': _refreshToken}))
+        .timeout(const Duration(seconds: 12));
+
+      debugPrint('AuthService.refreshToken status=${res.statusCode} body=${res.body}');
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final body = jsonDecode(res.body);
+        final newAccess = body['access_token'] as String? ?? body['token'] as String?;
+        final newRefresh = body['refresh_token'] as String? ?? _refreshToken;
+        final name = body['user_name'] as String? ?? _userName;
+        final role = body['role'] as String? ?? _role;
+
+        if (newAccess != null && newAccess.isNotEmpty) {
+          await saveTokens(newAccess, newRefresh ?? '', userName: name, role: role);
+          _token = newAccess;
+          _refreshToken = newRefresh;
+          _userName = name ?? _userName;
+          _role = role ?? _role;
+          debugPrint('AuthService.refreshToken: refreshed successfully');
+          return true;
+        }
+      } else {
+        debugPrint('AuthService.refreshToken failed status=${res.statusCode}');
+        await logout();
+      }
+    } catch (e) {
+      debugPrint('AuthService.refreshToken exception: $e');
+    }
+    return false;
+  }
+
+  Future<void> refreshUserInfo() async {
+    await loadFromPrefs();
+  }
+}
+

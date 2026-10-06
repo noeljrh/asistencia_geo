@@ -7,13 +7,24 @@ import 'screens/settings.dart';
 import 'services/auth_service.dart';
 import 'services/api_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AuthService.instance.init();
+
+  // Ajusta la URL según tu entorno. Usa localhost si ejecutas backend en la misma máquina.
+  ApiService.setBaseUrl('http://localhost:3000');
+
+  // Cargar modo fake guardado en prefs (si existe) y forzar modo real/false si lo deseas.
   await ApiService.loadFakeModeFromPrefs();
+  await ApiService.setFakeMode(false);
+
+  // Inicializar AuthService (carga tokens desde SharedPreferences)
+  await AuthService.instance.init();
+
+  // Leer preferencias para decidir la ruta inicial y el tema
   final prefs = await SharedPreferences.getInstance();
   final name = prefs.getString('user_name');
   final savedDark = prefs.getBool('use_dark_theme') ?? false;
+
   runApp(MyApp(initialRoute: name == null ? '/' : '/home', initialDark: savedDark));
 }
 

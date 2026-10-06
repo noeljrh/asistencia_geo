@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../services/api_service.dart';
 import '../services/queue_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/history_card.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -33,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadName() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _name = prefs.getString('user_name') ?? '');
+    setState(() => _name = prefs.getString('user_name') ?? AuthService.instance.userName);
   }
 
   Future<void> _loadHistory() async {
@@ -53,6 +54,28 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
+  Future<Map<String, dynamic>> _buildPayloadWithUserId({
+    required String name,
+    required double latitude,
+    required double longitude,
+    required String timestamp,
+    required double accuracy,
+    required String mapsUrl,
+  }) async {
+    // IMPORTANT: Do not add user_id/userId by default.
+    // The backend may identify the user from the Authorization token.
+    final payload = {
+      'name': name,
+      'latitude': latitude,
+      'longitude': longitude,
+      'timestamp': timestamp,
+      'accuracy': accuracy,
+      'maps_url': mapsUrl,
+    };
+
+    return payload;
+  }
+
   Future<void> _sendLocationToServer() async {
     if (_isSending) return;
     setState(() {
@@ -65,21 +88,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final timestamp = DateFormat("yyyy-MM-dd HH:mm:ss").format(DateTime.now());
       final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
 
-      final payload = {
-        'name': _name,
-        'latitude': pos.latitude,
-        'longitude': pos.longitude,
-        'timestamp': timestamp,
-        'accuracy': pos.accuracy,
-        'maps_url': mapsUrl,
-      };
+      final payload = await _buildPayloadWithUserId(
+        name: _name,
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        timestamp: timestamp,
+        accuracy: pos.accuracy,
+        mapsUrl: mapsUrl,
+      );
 
       setState(() => _status = 'Enviando al servidor...');
       final res = await ApiService.sendLocation(payload);
 
-      // DEBUG log para verificar la respuesta exacta
-      // Revisa la consola para la línea que empieza con [DEBUG]
-      print('[DEBUG] ApiService.sendLocation response: $res');
+      debugPrint('[DEBUG] ApiService.sendLocation response: $res');
 
       if (res['success'] == true) {
         final entry = '$timestamp — Enviado: ${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}\n$mapsUrl';
@@ -87,21 +108,51 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!mounted) return;
         setState(() => _status = 'Enviado correctamente');
         _showSnack('Enviado correctamente', success: true);
-      } else if (res['queued'] == true && res['queueId'] != null) {
+        return;
+      }
+
+      final int statusCode = res['statusCode'] is int ? res['statusCode'] as int : -1;
+      final String message = (res['message'] ?? res['body'] ?? '').toString();
+
+      if (statusCode == 401 && message.toLowerCase().contains('token')) {
+        await QueueService.instance.init();
+        final queueId = await QueueService.instance.add(payload);
+        final entry = '$timestamp — PENDIENTE — queueId:$queueId\n$mapsUrl';
+        await _addHistory(entry);
+        if (!mounted) return;
+        setState(() => _status = 'Encolado por token inválido');
+        _showSnack('Encolado para reintento (token inválido)', success: false);
+
+        // Sugerir re-login al usuario
+        await _promptRelogin();
+        return;
+      }
+
+      if (res['permanent'] == true) {
+        final entry = '$timestamp — FALLIDO_PERMANENTE — ${res['message'] ?? res['body']}\n$mapsUrl';
+        await _addHistory(entry);
+        if (!mounted) return;
+        setState(() => _status = 'Fallo permanente: ${res['message'] ?? 'Error'}');
+        _showSnack('Fallo permanente: ${res['message'] ?? 'Error'}', success: false);
+        return;
+      }
+
+      if (res['queued'] == true && res['queueId'] != null) {
         final queueId = res['queueId'] as String;
         final entry = '$timestamp — PENDIENTE — queueId:$queueId\n$mapsUrl';
         await _addHistory(entry);
         if (!mounted) return;
         setState(() => _status = 'Encolado para reintento');
         _showSnack('Encolado para reintento', success: false);
-      } else {
-        final err = res['error'] ?? 'Código ${res['statusCode'] ?? 'N/A'}';
-        final entry = '$timestamp — Error al enviar: $err\n$mapsUrl';
-        await _addHistory(entry);
-        if (!mounted) return;
-        setState(() => _status = 'Error al enviar: $err');
-        _showSnack('Error al enviar: $err', success: false);
+        return;
       }
+
+      final err = res['error'] ?? res['message'] ?? 'Código ${res['statusCode'] ?? 'N/A'}';
+      final entry = '$timestamp — Error al enviar: $err\n$mapsUrl';
+      await _addHistory(entry);
+      if (!mounted) return;
+      setState(() => _status = 'Error al enviar: $err');
+      _showSnack('Error al enviar: $err', success: false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _status = 'Error: ${e.toString()}');
@@ -110,14 +161,14 @@ class _HomeScreenState extends State<HomeScreen> {
       try {
         final timestamp = DateFormat("yyyy-MM-dd HH:mm:ss").format(DateTime.now());
         final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=0,0';
-        final payload = {
-          'name': _name,
-          'latitude': 0,
-          'longitude': 0,
-          'timestamp': timestamp,
-          'accuracy': 0,
-          'maps_url': mapsUrl,
-        };
+        final payload = await _buildPayloadWithUserId(
+          name: _name,
+          latitude: 0,
+          longitude: 0,
+          timestamp: timestamp,
+          accuracy: 0,
+          mapsUrl: mapsUrl,
+        );
         await QueueService.instance.init();
         final queueId = await QueueService.instance.add(payload);
         final entry = '$timestamp — PENDIENTE — queueId:$queueId\n$mapsUrl';
@@ -126,6 +177,26 @@ class _HomeScreenState extends State<HomeScreen> {
     } finally {
       if (!mounted) return;
       setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _promptRelogin() async {
+    if (!mounted) return;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sesión expirada'),
+        content: const Text('Tu sesión ha expirado o el token no es válido. ¿Deseas volver a iniciar sesión ahora?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Más tarde')),
+          ElevatedButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Reingresar')),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/');
     }
   }
 
@@ -153,38 +224,76 @@ class _HomeScreenState extends State<HomeScreen> {
       final url = 'https://wa.me/?text=$encoded';
       final uri = Uri.parse(url);
 
+      final payload = await _buildPayloadWithUserId(
+        name: _name,
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        timestamp: timestamp,
+        accuracy: pos.accuracy,
+        mapsUrl: mapsUrl,
+      );
+
+      await QueueService.instance.init();
+      final queueId = await QueueService.instance.add(payload);
+      debugPrint('[Home] WhatsApp flow created queueId=$queueId payloadKeys=${payload.keys.toList()}');
+
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
 
-        final payload = {
-          'name': _name,
-          'latitude': pos.latitude,
-          'longitude': pos.longitude,
-          'timestamp': timestamp,
-          'accuracy': pos.accuracy,
-          'maps_url': mapsUrl,
-        };
-
-        final res = await ApiService.sendLocation(payload);
-
-        print('[DEBUG] ApiService.sendLocation (WhatsApp) response: $res');
-
-        if (res['success'] == true) {
-          final entry = '$timestamp — WhatsApp preparado — Enviado: ${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}\n$mapsUrl';
-          await _addHistory(entry);
-        } else if (res['queued'] == true && res['queueId'] != null) {
-          final queueId = res['queueId'] as String;
-          final entry = '$timestamp — WhatsApp preparado — PENDIENTE — queueId:$queueId\n$mapsUrl';
-          await _addHistory(entry);
-        } else {
-          final entry = '$timestamp — WhatsApp preparado — Error al enviar\n$mapsUrl';
-          await _addHistory(entry);
+        final whatsappRes = {'success': true, 'statusCode': 200};
+        try {
+          await QueueService.instance.notifyWhatsAppResult(queueId, whatsappRes);
+          debugPrint('[Home] notifyWhatsAppResult called for queueId=$queueId whatsappOk=true');
+        } catch (e) {
+          debugPrint('[Home] notifyWhatsAppResult exception: $e');
         }
+
+        ApiService.sendLocation(payload).then((res) async {
+          debugPrint('[Home] background ApiService.sendLocation (after WhatsApp) response: $res');
+
+          final int statusCode = res['statusCode'] is int ? res['statusCode'] as int : -1;
+          final String message = (res['message'] ?? res['body'] ?? '').toString();
+
+          if (res['success'] == true) {
+            debugPrint('[Home] background send: backend accepted');
+            return;
+          }
+
+          if (res['permanent'] == true) {
+            debugPrint('[Home] background send: permanent failure ${res['message'] ?? res['body']}');
+            return;
+          }
+
+          if (statusCode == 401 && message.toLowerCase().contains('token')) {
+            try {
+              await QueueService.instance.init();
+              final qid = await QueueService.instance.add(payload);
+              debugPrint('[Home] background send: enqueued due to token issue queueId=$qid');
+              await _promptRelogin();
+            } catch (e) {
+              debugPrint('[Home] background send: failed to enqueue after 401: $e');
+            }
+            return;
+          }
+
+          if (res['queued'] == true && res['queueId'] != null) {
+            debugPrint('[Home] background send: backend returned queued info queueId=${res['queueId']}');
+            return;
+          }
+
+          debugPrint('[Home] background send: other error status=$statusCode body=${res['body']}');
+        }).catchError((e) {
+          debugPrint('[Home] background ApiService.sendLocation exception: $e');
+        });
+
+        final entry = '$timestamp — WhatsApp preparado — Enviado: ${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)}\n$mapsUrl';
+        await _addHistory(entry);
 
         if (!mounted) return;
         setState(() => _status = 'WhatsApp abierto');
         _showSnack('WhatsApp abierto', success: true);
       } else {
+        await QueueService.instance.removeById(queueId);
         if (!mounted) return;
         setState(() => _status = 'No se puede abrir WhatsApp');
         _showSnack('No se puede abrir WhatsApp', success: false);
@@ -424,8 +533,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         String? status;
                         if (item.contains('PENDIENTE')) status = 'PENDIENTE';
+                        else if (item.contains('PENDIENTE_TOKEN')) status = 'PENDIENTE_TOKEN';
                         else if (item.contains('REINTENTANDO')) status = 'REINTENTANDO';
-                        else if (item.contains('Error') || item.contains('Error al enviar') || item.contains('FALLIDO')) status = 'FALLIDO';
+                        else if (item.contains('Error') || item.contains('Error al enviar') || item.contains('FALLIDO') || item.contains('FALLIDO_PERMANENTE')) status = 'FALLIDO';
                         else status = 'ENVIADO';
 
                         return Dismissible(
@@ -485,16 +595,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                 }
                                 final timestamp = DateFormat("yyyy-MM-dd HH:mm:ss").format(DateTime.now());
                                 final maps = mapsUrl ?? 'https://www.google.com/maps';
-                                final payload = {
-                                  'name': _name,
-                                  'latitude': lat ?? 0,
-                                  'longitude': lon ?? 0,
-                                  'timestamp': timestamp,
-                                  'accuracy': 0,
-                                  'maps_url': maps,
-                                };
+                                final payload = await _buildPayloadWithUserId(
+                                  name: _name,
+                                  latitude: lat ?? 0,
+                                  longitude: lon ?? 0,
+                                  timestamp: timestamp,
+                                  accuracy: 0,
+                                  mapsUrl: maps,
+                                );
 
                                 final res = await ApiService.sendLocation(payload);
+
                                 if (res['success'] == true) {
                                   final newEntry = '$timestamp — Reenviado correctamente\n$maps';
                                   _history[index] = newEntry;
@@ -502,7 +613,36 @@ class _HomeScreenState extends State<HomeScreen> {
                                   if (!mounted) return;
                                   setState(() {});
                                   _showSnack('Reenviado correctamente', success: true);
-                                } else if (res['queued'] == true && res['queueId'] != null) {
+                                  return;
+                                }
+
+                                final int statusCode = res['statusCode'] is int ? res['statusCode'] as int : -1;
+                                final String message = (res['message'] ?? res['body'] ?? '').toString();
+
+                                if (res['permanent'] == true) {
+                                  final newEntry = '$timestamp — FALLIDO_PERMANENTE — ${res['message'] ?? res['body']}\n$maps';
+                                  _history[index] = newEntry;
+                                  await _saveHistoryList();
+                                  if (!mounted) return;
+                                  setState(() {});
+                                  _showSnack('Fallo permanente: ${res['message'] ?? 'Error'}', success: false);
+                                  return;
+                                }
+
+                                if (statusCode == 401 && message.toLowerCase().contains('token')) {
+                                  await QueueService.instance.init();
+                                  final qid = await QueueService.instance.add(payload);
+                                  final newEntry = '$timestamp — PENDIENTE — queueId:$qid\n$maps';
+                                  _history[index] = newEntry;
+                                  await _saveHistoryList();
+                                  if (!mounted) return;
+                                  setState(() {});
+                                  _showSnack('Encolado para reintento (token inválido)', success: false);
+                                  await _promptRelogin();
+                                  return;
+                                }
+
+                                if (res['queued'] == true && res['queueId'] != null) {
                                   final qid = res['queueId'] as String;
                                   final newEntry = '$timestamp — PENDIENTE — queueId:$qid\n$maps';
                                   _history[index] = newEntry;
@@ -510,9 +650,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                   if (!mounted) return;
                                   setState(() {});
                                   _showSnack('Encolado para reintento', success: false);
-                                } else {
-                                  _showSnack('No se pudo reintentar', success: false);
+                                  return;
                                 }
+
+                                _showSnack('No se pudo reintentar', success: false);
                               } catch (e) {
                                 _showSnack('No se pudo reintentar: ${e.toString()}', success: false);
                               }
@@ -528,4 +669,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
